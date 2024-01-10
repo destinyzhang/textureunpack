@@ -10,42 +10,38 @@ export const methods: { [key: string]: (...any: any) => any } = {
         if (currentSelection.length > 0) {
             let selectionUUid = currentSelection[0];
             let selectionMeta = await Editor.Message.request("asset-db","query-asset-meta", selectionUUid)
-            console.log(selectionMeta);
-            let assetInfo = await Editor.Message.request("asset-db","query-asset-info", selectionUUid)
+            let textureAtlasSubMetas = selectionMeta.subMetas;
+            if (selectionMeta.importer !=  'sprite-atlas' || !textureAtlasSubMetas) {
+                Editor.Dialog.error("请先选择图集文件");
+                return;
+            }
             let textureUuid =  selectionMeta.userData.textureUuid as string
             let fileuuid = textureUuid.split('@')[0]
             let textureAtlasPath = await Editor.Message.request("asset-db","query-path", fileuuid)
             if (!textureAtlasPath) {
-                Editor.Dialog.error("请先选择图集文件");
+                Editor.Dialog.error("未找到图集路径");
                 return;
             }
-            let textureAtlasSubMetas = selectionMeta.subMetas;
-            if (assetInfo.type === 'cc.SpriteAtlas'
-                && textureAtlasSubMetas) {
-                let extractedImageSaveFolder = Editor.Utils.Path.join(Editor.Project.path, 'temp', Editor.Utils.Path.basenameNoExt(textureAtlasPath) + '_unpack');
-                Editor.Utils.Path
-                Fs.mkdirSync(extractedImageSaveFolder,{recursive: true})
-                for(let spriteFrameName in textureAtlasSubMetas) {
-                    let spriteFrameObj = textureAtlasSubMetas[spriteFrameName];
-                    let userData = spriteFrameObj.userData;
-                    let isRotated = userData.rotated;
-                    let originalSize = {width:userData.rawWidth,height: userData.rawHeight};
-                    let rect = {x: userData.trimX,y: userData.trimY, width: userData.width,height: userData.height};
-                    let offset = {x : userData.offsetX, y:userData.offsetY };
-                    let trimmedLeft = Math.ceil(offset.x + (originalSize.width - rect.width) / 2);
-                    let trimmedRight = Math.ceil((originalSize.width - rect.width) / 2 - offset.x);
-                    let trimmedTop = Math.ceil((originalSize.height - rect.height) / 2 - offset.y);
-                    let trimmedBottom = Math.ceil(offset.y + (originalSize.height - rect.height) / 2);
-                    let extractedSmallPngSavePath = Editor.Utils.Path.join(extractedImageSaveFolder, `${spriteFrameObj.name}.png`);
-                    await sharp(textureAtlasPath).extract({ left: rect.x, top: rect.y, width: rect.height, height: rect.width })
-                        .extend({ top: trimmedTop, bottom: trimmedBottom, left: trimmedLeft, right: trimmedRight })
-                        .rotate(isRotated ? 270 :0)
-                        .toFile(extractedSmallPngSavePath);
-                }
-                Editor.Dialog.info("图片导出完成");
-            } else {
-                Editor.Dialog.error("请先选择图集文件");
+            let extractedImageSaveFolder = Editor.Utils.Path.join(Editor.Project.tmpDir, 'unpacktexture', Editor.Utils.Path.basenameNoExt(textureAtlasPath));
+            Fs.mkdirSync(extractedImageSaveFolder,{recursive: true})
+            let count = 0
+            for(let spriteFrameName in textureAtlasSubMetas) {
+                let spriteFrameObj = textureAtlasSubMetas[spriteFrameName];
+                let userData = spriteFrameObj.userData;
+                let isRotated = userData.rotated;
+                let spriteRect = {x: userData.trimX,y: userData.trimY, width: userData.width,height: userData.height};
+                let extendTop = Math.ceil((userData.rawHeight - spriteRect.height) / 2 - userData.offsetY);
+                let extendBottom = Math.ceil(userData.offsetY + (userData.rawHeight - spriteRect.height) / 2);
+                let extendLeft = Math.ceil(userData.offsetX + (userData.rawWidth - spriteRect.width) / 2);
+                let extendRight = Math.ceil((userData.rawWidth - spriteRect.width) / 2 - userData.offsetX);
+                let extractedSmallPngSavePath = Editor.Utils.Path.join(extractedImageSaveFolder, `${spriteFrameObj.name}.png`);
+                await sharp(textureAtlasPath).extract({ left: spriteRect.x, top: spriteRect.y, width: isRotated ? spriteRect.height : spriteRect.width, height: isRotated ? spriteRect.width : spriteRect.height })
+                    .extend({ top: extendTop, bottom: extendBottom, left: extendLeft, right: extendRight })
+                    .rotate(isRotated ? 270 : 0)
+                    .toFile(extractedSmallPngSavePath);
+                count++;
             }
+            Editor.Dialog.info(`图片导出完成,共导出${count}张图片`);
         } else {
             Editor.Dialog.error("请先选择图集文件");
         }
